@@ -1,113 +1,250 @@
-@ -1,112 +0,0 @@
-#include "raylib.h"
+﻿#include <iostream>
 #include <vector>
 #include <string>
-#include <fstream>
-#include <cstdlib>
-#include <ctime>
+#include <thread>
+#include <chrono>
 
-// Game states
-enum GameState { START, PLAYING, GAME_OVER };
+using namespace std;
 
-// Load jokes from file
-std::vector<std::string> LoadJokes(const char* filename) {
-    std::vector<std::string> jokes;
-    std::ifstream file(filename);
-    std::string line;
+// ---------------------------------------------------------------
+// StoryNode: Represents one moment in the story.
+// Each node contains:
+//
+// - text: The story narration shown to the player.
+// - options: Player choices at this story point.
+// - nextNodes: Indexes pointing to the next StoryNode in the story tree.
+//
+// Note: If options.size() == 0, it is an ENDING node.
+// ---------------------------------------------------------------
+struct StoryNode {
+    string text;
+    vector<string> options;
+    vector<int> nextNodes;
+};
 
-    while (std::getline(file, line)) {
-        if (!line.empty()) {
-            jokes.push_back(line);
-        }
+// Typewriter printing for atmosphere
+void slowPrint(const string& text, int delay = 10) {
+    for (char c : text) {
+        cout << c << flush;
+        this_thread::sleep_for(chrono::milliseconds(delay));
     }
+    cout << "\n";
+}
 
-    return jokes;
+// Displays a block of text with spacing
+void blockText(const string& text) {
+    cout << "\n";
+    slowPrint(text);
+    cout << "\n";
+}
+
+// Gets user choice safely
+int getChoice(int maxOption) {
+    int c;
+    while (true) {
+        cout << "Choose (1-" << maxOption << "): ";
+        cin >> c;
+        if (cin.good() && c >= 1 && c <= maxOption) return c - 1;
+
+        // Clean invalid input
+        cin.clear();
+        cin.ignore(10000, '\n');
+        cout << "Invalid choice. Try again.\n";
+    }
 }
 
 int main() {
-    const int screenWidth = 800;
-    const int screenHeight = 600;
+    // ---------------------------------------------------------------
+    // STORY STRUCTURE:
+    //
+    // We store all story points (nodes) in a vector<StoryNode>.
+    // Every node's nextNodes vector holds INDEXES of other nodes.
+    //
+    // This creates a branching **story tree**, allowing multiple paths.
+    // ---------------------------------------------------------------
 
-    InitWindow(screenWidth, screenHeight, "Raylib Micro-Game: Joke Collector");
-    SetTargetFPS(60);
+    vector<StoryNode> story;
 
-    // Load jokes
-    std::vector<std::string> jokes = LoadJokes("jokes.txt");
-    std::string currentJoke = "No jokes found!";
-    if (!jokes.empty()) {
-        srand(time(0));
-        currentJoke = jokes[rand() % jokes.size()];
-    }
+    // 0: Opening scene
+    story.push_back({
+        "You awaken at dusk, standing on the broken road leading into the abandoned city of Asterfall.\n"
+        "A cold wind moves through shattered towers. Behind you is the forest. Ahead, the ruins.\n"
+        "A faint light glows from a library to your left, while a distant metallic ringing comes from the right.",
+        {"Enter the glowing library", "Follow the metallic ringing", "Head deeper into the city center"},
+        {1, 2, 3}
+        });
 
-    GameState state = START;
+    // 1: Library
+    story.push_back({
+        "Inside the library, shelves lean like tired giants. A lantern flickers.\n"
+        "On a desk sits an old journal with a metal clasp. Footsteps echo upstairs.",
+        {"Inspect the journal", "Climb the stairs"},
+        {4, 5}
+        });
 
-    // Player
-    Rectangle player = { 100, 100, 40, 40 };
-    float speed = 4.0f;
+    // 2: Metallic ringing
+    story.push_back({
+        "You follow the ringing to a workshop. Tools are scattered everywhere.\n"
+        "A cracked automaton lies on a table, its gears grinding weakly.",
+        {"Try to repair the automaton", "Search the workshop"},
+        {6, 7}
+        });
 
-    // Goal
-    Rectangle goal = { 600, 400, 30, 30 };
+    // 3: City center
+    story.push_back({
+        "You step into the city plaza. Empty market stalls line the streets.\n"
+        "A huge statue of an ancient king stands in the center, its eyes glowing faintly.",
+        {"Inspect the statue", "Take shelter inside a nearby tavern"},
+        {8, 9}
+        });
 
-    while (!WindowShouldClose()) {
-        BeginDrawing();
-        ClearBackground(RAYWHITE);
+    // 4: Inspect journal — ending
+    story.push_back({
+        "You open the journal. Its pages tell the truth of Asterfall: the city was frozen in time\n"
+        "by its own scholars to escape a coming disaster.\n\n"
+        "As you finish reading, the lantern brightens.\n"
+        "The room dissolves into golden dust.\n\n"
+        "✨ Ending: Keeper of Forgotten Knowledge ✨",
+        {}, {}
+        });
 
-        switch (state) {
-            case START:
-                DrawText("Welcome to Joke Collector!", 220, 100, 30, DARKBLUE);
-                DrawText(currentJoke.c_str(), 100, 200, 20, GRAY);
-                DrawText("Press [ENTER] to start", 260, 400, 20, BLACK);
+    // 5: Upstairs in library
+    story.push_back({
+        "You climb the stairs. A hooded figure stands in front of a tall window.\n"
+        "\"You came back,\" they whisper.\n"
+        "Their hand extends, offering you a silver key.",
+        {"Take the key", "Refuse and demand answers"},
+        {10, 11}
+        });
 
-                if (IsKeyPressed(KEY_ENTER)) {
-                    state = PLAYING;
-                }
-                break;
+    // 6: Repair automaton — ending
+    story.push_back({
+        "You tighten gears and reconnect wires. The automaton's eyes flicker to life.\n"
+        "\"Thank… you…\" it says before collapsing again.\n"
+        "A secret panel opens, revealing a hidden path out of the city.\n\n"
+        "✨ Ending: The Gentle Mechanic ✨",
+        {}, {}
+        });
 
-            case PLAYING:
-                // Movement
-                if (IsKeyDown(KEY_RIGHT)) player.x += speed;
-                if (IsKeyDown(KEY_LEFT)) player.x -= speed;
-                if (IsKeyDown(KEY_DOWN)) player.y += speed;
-                if (IsKeyDown(KEY_UP)) player.y -= speed;
+    // 7: Search workshop
+    story.push_back({
+        "You find blueprints of a large device labeled ONLY HOPE.\n"
+        "It seems unfinished. A generator hums softly beneath the floor.",
+        {"Activate the generator", "Leave before something goes wrong"},
+        {12, 13}
+        });
 
-                // Boundaries
-                if (player.x < 0) player.x = 0;
-                if (player.y < 0) player.y = 0;
-                if (player.x + player.width > screenWidth) player.x = screenWidth - player.width;
-                if (player.y + player.height > screenHeight) player.y = screenHeight - player.height;
+    // 8: Inspect statue — ending
+    story.push_back({
+        "You touch the statue.\n"
+        "Its eyes flare, and the plaza fills with ancient whispering voices.\n"
+        "The city awakens—but not in the way you hoped.\n\n"
+        "✨ Ending: Echoes of the King ✨",
+        {}, {}
+        });
 
-                // Draw player and goal
-                DrawRectangleRec(goal, GOLD);
-                DrawRectangleRec(player, BLUE);
-                DrawText("Collect the star!", 10, 10, 20, DARKGRAY);
+    // 9: Tavern
+    story.push_back({
+        "Inside the tavern, a warm fire burns despite the city's abandonment.\n"
+        "A menu lies open on the counter, names written in dust.",
+        {"Call out to see if anyone is here", "Sit and warm your hands"},
+        {14, 15}
+        });
 
-                // Check collision
-                if (CheckCollisionRecs(player, goal)) {
-                    state = GAME_OVER;
-                }
-                break;
+    // 10: Take key — ending
+    story.push_back({
+        "You take the key. The figure nods.\n"
+        "The city rumbles. Time begins moving again.\n"
+        "People awaken from the stasis.\n\n"
+        "✨ Ending: The Key to Dawn ✨",
+        {}, {}
+        });
 
-            case GAME_OVER:
-                DrawText("You collected the star!", 240, 200, 30, GREEN);
-                DrawText("Press [R] to restart", 270, 400, 20, DARKGRAY);
+    // 11: Refuse key
+    story.push_back({
+        "The figure sighs.\n"
+        "\"Then you are not ready. The city will wait another century.\"\n"
+        "The window seals shut, trapping you inside.",
+        {"Search for another exit", "Pound on the sealed window"},
+        {16, 17}
+        });
 
-                if (IsKeyPressed(KEY_R)) {
-                    // Reset
-                    player.x = 100;
-                    player.y = 100;
-                    goal.x = 600;
-                    goal.y = 400;
-                    if (!jokes.empty()) {
-                        currentJoke = jokes[rand() % jokes.size()];
-                    }
-                    state = START;
-                }
-                break;
+    // 12: Generator — ending
+    story.push_back({
+        "You flip the switch.\n"
+        "A massive pulse of energy erupts, enveloping the city in light.\n"
+        "When it fades, Asterfall is restored to its glory.\n\n"
+        "✨ Ending: Rebirth of Asterfall ✨",
+        {}, {}
+        });
+
+    // 13: Leave workshop — ending
+    story.push_back({
+        "You step outside just before the workshop collapses.\n"
+        "The city swallows the workshop whole.\n\n"
+        "✨ Ending: Survivor's Instinct ✨",
+        {}, {}
+        });
+
+    // 14: Call out — ending
+    story.push_back({
+        "Your voice echoes.\n"
+        "A shadowy figure rises behind the bar.\n"
+        "\"We've been waiting for someone brave enough to return.\"\n\n"
+        "✨ Ending: The Tavern of Souls ✨",
+        {}, {}
+        });
+
+    // 15: Warm hands — ending
+    story.push_back({
+        "As you warm your hands, you feel at peace.\n"
+        "The fire grows brighter until the room melts into light.\n\n"
+        "✨ Ending: Peaceful Fade ✨",
+        {}, {}
+        });
+
+    // 16: Search for exit — ending
+    story.push_back({
+        "You find a hidden ladder leading to the roof.\n"
+        "The stars above swirl into a gateway.\n\n"
+        "✨ Ending: Wanderer of the Sky ✨",
+        {}, {}
+        });
+
+    // 17: Pound on window — ending
+    story.push_back({
+        "Your fists strike the window—\n"
+        "and the glass opens like water, pulling you through.\n\n"
+        "✨ Ending: The Window Between Worlds ✨",
+        {}, {}
+        });
+
+    // ---------------------------------------------------------------
+    // GAME LOOP — navigates the story tree until reaching an ending.
+    // ---------------------------------------------------------------
+    int current = 0;
+
+    while (true) {
+        StoryNode& node = story[current];
+
+        blockText(node.text);
+
+        // If no options, story ends here.
+        if (node.options.empty()) {
+            slowPrint("THE END.\n");
+            break;
         }
 
-        EndDrawing();
+        // Show options
+        for (int i = 0; i < node.options.size(); i++) {
+            cout << "  " << (i + 1) << ") ";
+            slowPrint(node.options[i], 5);
+        }
+
+        int choice = getChoice(node.options.size());
+        current = node.nextNodes[choice];  // Move to next node
     }
 
-    CloseWindow();
+    slowPrint("Thanks for playing!");
     return 0;
 }
